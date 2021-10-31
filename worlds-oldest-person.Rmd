@@ -1,0 +1,259 @@
+---
+title: "Visualizing World's Oldest Person data"
+author: "André Garcia"
+output:
+  html_document:
+    code_folding: "show"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+
+
+### Introduction
+
+The goal of this project is to do some basic exploration of a dataset developed by the Gerontology Research Group consisting of information about World’s Oldest Person (WOP) titleholders throughout time and to develop some visualizations based on it.
+
+The data is available in https://grg.org/Adams/C.HTM
+
+```{r}
+# import relevant libraries
+
+library(dplyr)
+library(readxl)
+library(stringr)
+library(ggplot2)
+library(knitr)
+library(treemap)
+```
+
+
+### Importing the data
+
+Since the dataset is small, it's easy to just copy and paste it into an excel sheet and then import it into R.
+
+Now let’s check if the data came out well.
+
+
+```{r}
+oldest <- read_excel("oldest.xlsx")
+```
+```{r}
+kable(head(oldest))
+
+# kable function makes output look nicer
+```
+```{r}
+colnames(oldest)
+```
+
+Because of the weird design of the original table, some column names have two layers. So when we imported the data an extra row was created with the second layer of some column names. Let's correct that by making column names clearer and then delete this first row. 
+
+```{r}
+new_columns = c('#', 'Birthplace', 'Name', 'Born', 'Died', 'Age_Years', 'Age_Days', 'Race', 'Sex', 'Deathplace', 'Oldest_YrRange', 'Oldest_AgeRange', 'Length_Years', 'Length_Days', 'Reign_Years', 'AccessionAge_Years', 'AccessionAge_Days', 'AddedToTable')
+colnames(oldest) <- new_columns
+oldest <- oldest[-1,]
+```
+
+```{r}
+kable(head(oldest))
+```
+Looks better now! 
+
+### Data visualization
+
+We could start by making some visualizations using Birthplace data. However, the column data is a bit confusing, since sometimes there is information in parentheses about states inside a country or brackets related to a footnote. Let's get rid of those. 
+
+```{r}
+oldest$Birthplace
+```
+
+```{r}
+pattern = '\\([\\w\\s]+\\)'
+pattern2 = '\\[\\d+\\]'
+Birthplace <- oldest$Birthplace %>%
+  str_replace(pattern2, '') %>%
+  str_replace(pattern, '') %>%
+  str_trim()
+Birthplace
+```
+```{r}
+oldest$Birthplace <- Birthplace
+```
+
+Let's see which countries had more people that held the title of World's Oldest Person.
+
+```{r}
+birthplace_df <- as.data.frame(table(Birthplace))
+birthplace_df <- birthplace_df[order(-birthplace_df$Freq),]
+row.names(birthplace_df) <- NULL
+birthplace_df
+```
+
+The country with more WOP title holders, according to our dataset, is the US (21 people), followed by Japan (11) and England (10). France comes in fourth (5), followed by Italy and Puerto Rico (2 each). After that, several countries have 1 person. We can better visualize the data by plotting it. 
+
+
+```{r}
+ggplot(birthplace_df,
+       aes(reorder(Birthplace, -Freq), Freq, fill=Birthplace)) +
+       geom_col() +
+       labs(
+         title = "World's Oldest Person titleholders since 1955 per country",
+         x = '',
+         y = "Number of people") + 
+       theme(plot.title = element_text(hjust = 0.5)) +
+       theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+       theme(legend.position = 'none')
+```
+
+It's time to check the male/female ratio in the dataset. 
+
+```{r}
+table(oldest$Sex)/length(oldest$Sex)
+```
+
+Approximately 90.77% of WOP titleholders are women, while 9.23% are men.
+
+We can build a pie chart to visualize this. 
+
+```{r}
+ggplot(oldest, aes(x="", y=Sex, fill=Sex)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) +
+  labs(
+       title = "World's Oldest Person titleholders since 1955 by gender",
+       x = '',
+       y = '') + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_void() +
+  scale_fill_discrete(name="", labels=c("Female", "Male"))
+```
+
+
+Now let's explore a bit some numerical columns.
+
+
+```{r}
+summary(oldest)
+```
+
+We can see that the datatypes of the columns are wrong ('character'), so we need to do some data cleaning before we can build visualizations with them. One of the several issues that may have pushed R to use the 'character' class for the columns is that on the last row there are many numbers with asterisks on them. That's because that row refers to Kane Tanaka, which was still alive when the table was made (and according to Wikipedia is still alive today!). We've decided to focus on historical data, so we are going to discard that last row for our numerical calculations. We'll do the same with the first row, which is full of NA values. 
+
+```{r}
+oldest_clean <- oldest[c(-1, -65),]
+```
+
+We'll start with the 'ReignYears' column which represents for how long (in years) each person held the WOP title, that is, the length of their "Reign". 
+
+```{r}
+oldest_clean$Reign_Years
+```
+```{r}
+oldest_clean$Reign_Years <- as.numeric(str_trim(oldest_clean$Reign_Years))
+oldest_clean$Reign_Years
+```
+
+If we want to plot this variable against the 'Oldest_YrRange' column, which represents the period when each specific person held the title, we need to do something about that column as well. To simplify things, we are going to keep only the year at the end of the reign (year of death). We are interested in detecting main trends, so that won't have a meaningful impact on our analysis.  
+
+```{r}
+oldest_clean$Oldest_YrRange
+```
+```{r}
+oldest_clean$Death_Year <- oldest_clean$Oldest_YrRange %>%
+  str_sub(-4, -1) %>%
+  as.numeric()
+oldest_clean$Death_Year
+```
+
+
+```{r}
+ggplot(oldest_clean,
+       aes(Death_Year, Reign_Years)) +
+       geom_line(color="red", size=0.8) +
+       labs(
+         title = "Length of Reign as WOP through time",
+         x = '',
+         y = "Length of Reign (in years)") + 
+       theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+We can see that 'length of reign' mostly oscillates between less than one year and around 2.5 years, with a couple of peaks in the mid 60s (around 5 years) and late 90s (around 9.5 years).
+
+The exact numbers for the lengths can be seen below, in descending order. 
+
+```{r}
+sort(oldest_clean$Reign_Years, decreasing = TRUE)
+```
+
+Now it's time to visualize the average reign length by country.
+
+
+```{r}
+mean_reign <- oldest_clean %>%
+  group_by(Birthplace) %>%
+  summarize(mean_reign_yrs= mean(Reign_Years))
+mean_reign <- mean_reign[order(-mean_reign$mean_reign_yrs),]
+mean_reign
+
+```
+
+
+```{r}
+treemap(mean_reign,
+        index="Birthplace",
+        vSize="mean_reign_yrs",
+        type="index",
+        title="Average years as WOP by country as share of total",
+        palette="Dark2",
+        border.col=c("black"),             
+        border.lwds=1,                         
+        fontsize.labels=0.5,
+        fontcolor.labels="white",
+        fontface.labels=1,            
+        bg.labels="transparent",              
+        align.labels=c("left", "top"),                                  
+        overlap.labels=0.5,
+        inflate.labels=T)  
+
+```
+
+It's interesting to see that Spain and Ecuador have a prominent position in the plot above. However, they both have only one person each in the dataset, so we can't really draw any conclusions from this, since the result could be attributed to chance. Countries with more people in the dataset, like the US, tend to have more variation, which pulls the average down, away from the atypical higher values.  
+
+
+To wrap it up, let's check how the oldest age reached by the WOP changed over time. The dataset has this data divided between 2 columns: one with full years lived and another with "extra" days. To make our analysis more precise, let's create a third column that integrates the information from those 2. We can divide the days column by 365.25 (average duration of year) and add the result to the years column.
+
+
+```{r}
+oldest_clean$Age_Days <- as.numeric(oldest_clean$Age_Days)
+oldest_clean$Age_Years <- as.numeric(oldest_clean$Age_Years)
+oldest_clean$Age_Total <- oldest_clean$Age_Days/365.25 + oldest_clean$Age_Years
+kable(oldest_clean[,c('Age_Years', 'Age_Days', 'Age_Total')])
+```
+
+```{r}
+sort(oldest_clean$Age_Total, decreasing = TRUE)
+```
+
+
+
+
+```{r}
+ggplot(oldest_clean,
+       aes(Death_Year, Age_Total)) +
+       geom_line(color="blue", size=1.2) +
+       labs(
+         title = "Oldest age (years) reached by WOP throughout time",
+         x = '',
+         y = '') + 
+       theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+Behind the variation, we can definitely see an upward trend here, possibly related to the rise in life expectancy through time. There is a peak above 122 years (!), related to	Jeanne Calment (1875–1997), oldest person to have ever lived (whose age was independently verified), according to the Guiness Book.  
+
+
